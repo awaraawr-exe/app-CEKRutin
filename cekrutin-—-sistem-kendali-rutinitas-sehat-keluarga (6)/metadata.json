@@ -1,0 +1,6 @@
+{
+  "name": "CEKRutin — Sistem Kendali Rutinitas Sehat Keluarga",
+  "description": "Aplikasi web & PWA pemantauan rutinitas sehat harian keluarga, cek kesehatan & grafik tren medis, agenda Puskesmas, serta edukasi pencegahan PTM.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

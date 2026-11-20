@@ -1,0 +1,334 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && isEmailVerified() && request.auth.uid == userId;
+    }
+
+    function parentFamilyExists(userId) {
+      return exists(/databases/$(database)/documents/families/$(userId));
+    }
+
+    function isValidFamilyProfile(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'managerName', 'managerEmail', 'city', 'puskesmasName',
+        'pinEnabled', 'pinCode', 'activeMemberId', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'managerName', 'managerEmail', 'city', 'puskesmasName',
+        'pinEnabled', 'pinCode', 'activeMemberId', 'createdAt', 'updatedAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && data.managerName is string && data.managerName.size() >= 1 && data.managerName.size() <= 100
+      && data.managerEmail is string && data.managerEmail.size() >= 3 && data.managerEmail.size() <= 150
+      && data.city is string && data.city.size() <= 100
+      && data.puskesmasName is string && data.puskesmasName.size() <= 150
+      && data.pinEnabled is bool
+      && data.pinCode is string && data.pinCode.size() == 4 && data.pinCode.matches('^[0-9]{4}$')
+      && isValidId(data.activeMemberId)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidFamilyMember(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'name', 'role', 'age', 'gender',
+        'targetWaterGlasses', 'targetFruitVegPortions', 'targetActivityMinutes',
+        'medicalNote', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'name', 'role', 'age', 'gender',
+        'targetWaterGlasses', 'targetFruitVegPortions', 'targetActivityMinutes',
+        'medicalNote', 'createdAt', 'updatedAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+      && data.role in ['Ayah', 'Ibu', 'Anak', 'Lansia', 'Pengelola']
+      && data.age is number && data.age >= 1 && data.age <= 120
+      && data.gender in ['Laki-laki', 'Perempuan']
+      && data.targetWaterGlasses is number && data.targetWaterGlasses >= 4 && data.targetWaterGlasses <= 20
+      && data.targetFruitVegPortions is number && data.targetFruitVegPortions >= 1 && data.targetFruitVegPortions <= 15
+      && data.targetActivityMinutes is number && data.targetActivityMinutes >= 5 && data.targetActivityMinutes <= 180
+      && data.medicalNote is string && data.medicalNote.size() <= 300
+      && data.createdAt is string && data.createdAt.size() <= 40
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidRoutineLog(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'memberId', 'date', 'waterGlasses',
+        'fruitPortions', 'vegetablePortions', 'activities', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'memberId', 'date', 'waterGlasses',
+        'fruitPortions', 'vegetablePortions', 'activities', 'updatedAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && isValidId(data.memberId)
+      && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      && data.waterGlasses is number && data.waterGlasses >= 0 && data.waterGlasses <= 30
+      && data.fruitPortions is number && data.fruitPortions >= 0 && data.fruitPortions <= 20
+      && data.vegetablePortions is number && data.vegetablePortions >= 0 && data.vegetablePortions <= 20
+      && data.activities is list && data.activities.size() <= 30
+      && (data.activities.size() == 0 || (
+        data.activities[0] is map
+        && data.activities[0].keys().hasAll(['id', 'label', 'minutes', 'loggedAt'])
+        && data.activities[0].keys().hasOnly(['id', 'label', 'minutes', 'loggedAt'])
+        && data.activities[0].id is string && data.activities[0].id.size() <= 64
+        && data.activities[0].label is string && data.activities[0].label.size() <= 100
+        && data.activities[0].minutes is number && data.activities[0].minutes >= 1 && data.activities[0].minutes <= 180
+        && data.activities[0].loggedAt is string && data.activities[0].loggedAt.size() <= 40
+      ))
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidHealthCheck(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'memberId', 'recordedAt', 'systolic', 'diastolic',
+        'glucose', 'glucoseType', 'cholesterol', 'weightKg', 'heightCm',
+        'bmi', 'overallStatus', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'memberId', 'recordedAt', 'systolic', 'diastolic',
+        'glucose', 'glucoseType', 'cholesterol', 'weightKg', 'heightCm',
+        'bmi', 'overallStatus', 'notes', 'createdAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && isValidId(data.memberId)
+      && data.recordedAt is string && data.recordedAt.size() >= 10 && data.recordedAt.size() <= 40
+      && data.systolic is number && data.systolic >= 40 && data.systolic <= 300
+      && data.diastolic is number && data.diastolic >= 30 && data.diastolic <= 200
+      && data.glucose is number && data.glucose >= 20 && data.glucose <= 800
+      && data.glucoseType in ['sewaktu', 'puasa']
+      && data.cholesterol is number && data.cholesterol >= 50 && data.cholesterol <= 600
+      && data.weightKg is number && data.weightKg >= 5 && data.weightKg <= 300
+      && data.heightCm is number && data.heightCm >= 40 && data.heightCm <= 250
+      && data.bmi is number && data.bmi >= 5 && data.bmi <= 100
+      && data.overallStatus in ['normal', 'waspada', 'konsultasi']
+      && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+      && data.createdAt is timestamp;
+    }
+
+    function isValidReminder(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'memberId', 'title', 'category', 'time', 'enabled', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'memberId', 'title', 'category', 'time', 'enabled', 'lastTriggeredDate', 'createdAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && isValidId(data.memberId)
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.category in ['air', 'buah_sayur', 'aktivitas', 'cek_medis']
+      && data.time is string && data.time.size() == 5 && data.time.matches('^[0-9]{2}:[0-9]{2}$')
+      && data.enabled is bool
+      && (!('lastTriggeredDate' in data) || (data.lastTriggeredDate is string && data.lastTriggeredDate.size() <= 10))
+      && data.createdAt is timestamp;
+    }
+
+    function isValidFaskesVisit(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'memberId', 'facilityName', 'serviceType', 'date', 'time', 'notes', 'completed', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'memberId', 'facilityName', 'serviceType', 'date', 'time', 'notes', 'completed', 'createdAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && isValidId(data.memberId)
+      && data.facilityName is string && data.facilityName.size() >= 1 && data.facilityName.size() <= 150
+      && data.serviceType is string && data.serviceType.size() >= 1 && data.serviceType.size() <= 150
+      && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      && data.time is string && data.time.size() == 5 && data.time.matches('^[0-9]{2}:[0-9]{2}$')
+      && data.notes is string && data.notes.size() <= 300
+      && data.completed is bool
+      && data.createdAt is timestamp;
+    }
+
+    function isValidCertificate(data, userId) {
+      return data.keys().hasAll([
+        'ownerUid', 'certificateNumber', 'recipientName', 'memberRole', 'score', 'totalQuestions', 'issuedAt', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'certificateNumber', 'recipientName', 'memberRole', 'score', 'totalQuestions', 'issuedAt', 'createdAt'
+      ])
+      && data.ownerUid == userId
+      && data.ownerUid == request.auth.uid
+      && data.certificateNumber is string && data.certificateNumber.size() >= 4 && data.certificateNumber.size() <= 40
+      && data.recipientName is string && data.recipientName.size() >= 1 && data.recipientName.size() <= 100
+      && data.memberRole in ['Ayah', 'Ibu', 'Anak', 'Lansia', 'Pengelola']
+      && data.score is number && data.score >= 0 && data.score <= 100
+      && data.totalQuestions is number && data.totalQuestions >= 1 && data.totalQuestions <= 20
+      && data.issuedAt is string && data.issuedAt.size() >= 10 && data.issuedAt.size() <= 40
+      && data.createdAt is timestamp;
+    }
+
+    // Master Family Health Manager Document (PII strictly owner-only)
+    match /families/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidFamilyProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidFamilyProfile(incoming(), userId)
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['activeMemberId', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['pinEnabled', 'pinCode', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly([
+            'managerName', 'city', 'puskesmasName', 'pinEnabled', 'pinCode', 'updatedAt'
+          ])
+        );
+      allow delete: if false;
+
+      // Subcollection: Family Members
+      match /members/{memberId} {
+        allow get: if isValidId(userId) && isValidId(memberId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(memberId)
+          && isOwner(userId)
+          && isValidFamilyMember(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(memberId)
+          && isOwner(userId)
+          && isValidFamilyMember(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'role', 'age', 'gender', 'targetWaterGlasses',
+            'targetFruitVegPortions', 'targetActivityMinutes', 'medicalNote', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(memberId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+
+      // Subcollection: Daily Routine Logs
+      match /routineLogs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(logId)
+          && isOwner(userId)
+          && isValidRoutineLog(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(logId)
+          && isOwner(userId)
+          && isValidRoutineLog(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().memberId == existing().memberId
+          && incoming().date == existing().date
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'waterGlasses', 'fruitPortions', 'vegetablePortions', 'activities', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+
+      // Subcollection: Health Check Records
+      match /healthChecks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checkId)
+          && isOwner(userId)
+          && isValidHealthCheck(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+
+      // Subcollection: Routine Reminders
+      match /reminders/{reminderId} {
+        allow get: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(reminderId)
+          && isOwner(userId)
+          && isValidReminder(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(userId) && isValidId(reminderId)
+          && isOwner(userId)
+          && isValidReminder(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['enabled'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['lastTriggeredDate'])
+          );
+        allow delete: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+
+      // Subcollection: Faskes / Puskesmas Visits
+      match /faskesVisits/{visitId} {
+        allow get: if isValidId(userId) && isValidId(visitId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(visitId)
+          && isOwner(userId)
+          && isValidFaskesVisit(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().createdAt == request.time;
+        allow update: if isValidId(userId) && isValidId(visitId)
+          && isOwner(userId)
+          && isValidFaskesVisit(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed']);
+        allow delete: if isValidId(userId) && isValidId(visitId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+
+      // Subcollection: Certificates
+      match /certificates/{certId} {
+        allow get: if isValidId(userId) && isValidId(certId) && isOwner(userId) && parentFamilyExists(userId);
+        allow list: if isOwner(userId) && existing().ownerUid == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(certId)
+          && isOwner(userId)
+          && isValidCertificate(incoming(), userId)
+          && parentFamilyExists(userId)
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(certId) && isOwner(userId) && parentFamilyExists(userId);
+      }
+    }
+  }
+}
